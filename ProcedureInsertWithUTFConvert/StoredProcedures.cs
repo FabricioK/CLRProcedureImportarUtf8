@@ -34,24 +34,27 @@ public partial class StoredProcedures
             }
         return primary_builder;
     }
-    private static string GetCreateTableScript(DataTable dt, string tableName, SqlConnection conn)
+    private static string GetCreateTableScript(DataTable dt, string schema, string tableName, SqlConnection conn)
     {
         string snip = string.Empty;
         string primary = string.Empty;
         StringBuilder sql = new StringBuilder();
         StringBuilder primary_builder = new StringBuilder();
 
-        sql.AppendFormat("IF OBJECT_ID('" + tableName + "', 'U') IS NOT NULL\r\n DROP TABLE " + tableName + "; \r\n");
-        sql.AppendFormat("CREATE TABLE {0}\r\n(\r\n", tableName);
+        sql.AppendFormat("IF OBJECT_ID('" + schema + tableName + "', 'U') IS NOT NULL\r\n DROP TABLE " + schema + tableName + "; \r\n");
+        sql.AppendFormat("CREATE TABLE {0}{1}\r\n(\r\n", schema, tableName);
         for (int i = 0; i < dt.Rows.Count; i++)
         {
             DataRow dr = dt.Rows[i];
-            primary = GetColumnPrimarySql(dr, conn);
-            primary_builder = GetCreatePrimaryScript(primary_builder, primary, dr["BaseTableName"].ToString().ToUpper());
-            snip = GetColumnSql(dr, conn);
+            primary = GetColumnPrimarySql(dr, tableName, conn);
+            primary_builder = GetCreatePrimaryScript(primary_builder, primary, tableName.ToUpper());
+            snip = GetColumnSql(dr, tableName, conn);
             sql.AppendFormat((i < dt.Rows.Count - 1) ? snip : snip.TrimEnd(',', '\r', '\n'));
         }
-        primary_builder.AppendFormat("])");
+        if (!String.IsNullOrWhiteSpace(primary_builder.ToString()))
+        {
+            primary_builder.AppendFormat("])");
+        }
         sql.AppendFormat("\r\n\r\n");
         sql.AppendFormat(primary_builder.ToString());
         sql.AppendFormat("\r\n)");
@@ -71,8 +74,15 @@ public partial class StoredProcedures
                 if (hasSize) { if (p_ColumnSize <= 8000) { converted = "VARCHAR (" + ColumnSize + ")"; } else { converted = "VARCHAR (MAX)"; } }
                 break;
             case "text":
-            case "long varchar ":
+            case "long varchar":
                 converted = "VARCHAR (MAX)";
+                break;
+            case "long binary":
+            case "image":
+                converted = "VARBINARY (MAX)";
+                break;
+            case "datetime":
+                converted = "datetime2";
                 break;
             default:
                 converted = (hasSize) ? "(" + ColumnSize + ")" : (hasPrecisionAndScale) ? "(" + NumericPrecision + "," + NumericScale + ")" : "";
@@ -81,13 +91,12 @@ public partial class StoredProcedures
         }
         return converted;
     }
-    private static string GetColumnPrimarySql(DataRow dr, SqlConnection conn)
+
+    private static string GetColumnPrimarySql(DataRow dr, string tname, SqlConnection conn)
     {
         string tablecol = dr["BaseColumnName"].ToString();
-        string tablename = dr["BaseTableName"].ToString();
-
         bool inPrimaryKey = false;
-        using (SqlCommand cmds = new SqlCommand(" SELECT * FROM [Sybase].IcetranProducao.sys.SYSCOLUMNS where tname = '" + tablename + "' and cname = '" + tablecol + "' ", conn))
+        using (SqlCommand cmds = new SqlCommand(" SELECT * FROM  OPENQUERY([Sybase],'Select * from  [Sybase].IcetranProducao.sys.SYSCOLUMNS where tname = ''" + tname + "'' and cname = ''" + tablecol + "''') ", conn))
         {
             SqlTransaction transactionset;
             transactionset = conn.BeginTransaction("SetTabela");
@@ -105,7 +114,7 @@ public partial class StoredProcedures
         return (inPrimaryKey) ? tablecol : "";
     }
 
-    private static string GetColumnSql(DataRow dr, SqlConnection conn)
+    private static string GetColumnSql(DataRow dr, string tablename, SqlConnection conn)
     {
         StringBuilder sql = new StringBuilder();
 
@@ -117,14 +126,12 @@ public partial class StoredProcedures
         bool hasSize = false;
         bool hasPrecisionAndScale = false;
 
-
         ColumnName = dr["ColumnName"].ToString();
         DataTypeName = dr["DataTypeName"].ToString();
         hasSize = HasSize(dr["DataTypeName"].ToString());
         hasPrecisionAndScale = HasPrecisionAndScale(dr["DataTypeName"].ToString());
 
         string tablecol = dr["BaseColumnName"].ToString();
-        string tablename = dr["BaseTableName"].ToString();
 
         if (hasSize)
             ColumnSize = dr["ColumnSize"].ToString();
@@ -134,7 +141,6 @@ public partial class StoredProcedures
             NumericPrecision = dr["NumericPrecision"].ToString();
             NumericScale = dr["NumericScale"].ToString();
         }
-
 
         bool IsUnique = (dr["IsUnique"].ToString().ToUpper() == "TRUE");
         bool IsKey = (dr["IsKey"].ToString().ToUpper() == "TRUE");
@@ -150,7 +156,7 @@ public partial class StoredProcedures
         bool IsColumnSet = (dr["IsColumnSet"].ToString().ToUpper() == "TRUE");
         string auxAutoIncrement = "";
         bool inPrimaryKey = false;
-        using (SqlCommand cmds = new SqlCommand(" SELECT * FROM [Sybase].IcetranProducao.sys.SYSCOLUMNS where tname = '" + tablename + "' and cname = '" + tablecol + "' ", conn))
+        using (SqlCommand cmds = new SqlCommand(" SELECT * FROM  OPENQUERY([Sybase],'Select * from  [Sybase].IcetranProducao.sys.SYSCOLUMNS where tname = ''" + tablename + "'' and cname = ''" + tablecol + "''') ", conn))
         {
             SqlTransaction transactionset;
             transactionset = conn.BeginTransaction("SetTabela");
@@ -177,11 +183,61 @@ public partial class StoredProcedures
         return sql.ToString();
     }
 
+    private static string GetPrimaryForOrder(DataTable dt, string schema, string tableName, SqlConnection conn)
+    {
+        string primary = string.Empty;     
+        for (int i = 0; i < dt.Rows.Count; i++)
+        {
+            DataRow dr = dt.Rows[i];
+            if(String.IsNullOrEmpty(primary))
+                primary = GetColumnPrimarySql(dr, tableName, conn);        
+        }        
+        return primary;
+    }
+
+    private static int GetPrimaryForOrderOrdinal(DataTable dt, string schema, string tableName, SqlConnection conn)
+    {
+        int primary = 0;
+        for (int i = 0; i < dt.Rows.Count; i++)
+        {
+            DataRow dr = dt.Rows[i];
+            if (primary == 0)
+                primary = GetColumnPrimarySqlOrdinal(dr, tableName, conn);
+        }
+        return primary;
+    }
+    private static int GetColumnPrimarySqlOrdinal(DataRow dr, string tname, SqlConnection conn)
+    {
+        string tablecol = dr["BaseColumnName"].ToString();
+        int colno = 0;
+        bool inPrimaryKey = false;
+        using (SqlCommand cmds = new SqlCommand(" SELECT * FROM  OPENQUERY([Sybase],'Select * from  [Sybase].IcetranProducao.sys.SYSCOLUMNS where tname = ''" + tname + "'' and cname = ''" + tablecol + "''') ", conn))
+        {
+            SqlTransaction transactionset;
+            transactionset = conn.BeginTransaction("SetTabela");
+            cmds.Transaction = transactionset;
+            using (SqlDataReader reader = cmds.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    inPrimaryKey = reader["in_primary_key"].ToString() == "Y";
+                    if (inPrimaryKey) 
+                    colno = Convert.ToInt32(reader["colno"].ToString()) - 1;
+                }
+                reader.Close();
+            }
+            transactionset.Commit();
+        }
+        return (inPrimaryKey) ? colno : 0;
+    }
+
     [SqlProcedure()]
     public static void ProcedureInsertWithUTFConvert(
-        SqlString de, SqlString para, SqlInt32 count)
+        SqlString de, SqlString para, SqlString schemade, SqlString schemapara, SqlInt32 count)
     {
         bool hasIdenity = false;
+        string primaryfororder = "";
+        int primaryforordinal = 0;
         List<string> columns = new List<string>();
         List<SqlDbType> tipos = new List<SqlDbType>();
         using (SqlConnection conn = new SqlConnection("context connection=true"))
@@ -193,11 +249,12 @@ public partial class StoredProcedures
             SqlCommand cmdset = conn.CreateCommand();
             SqlTransaction transactionset;
             transactionset = conn.BeginTransaction("SetTabela");
-            cmdset.CommandText = "SET FMTONLY ON;SET NOCOUNT ON; select * from " + de.ToString() + "; SET FMTONLY OFF;SET NOCOUNT OFF;";
+            cmdset.CommandText = "SET FMTONLY ON;SET NOCOUNT ON; select * from OPENQUERY([SYBASE],' Select * from " + schemade.ToString() + de.ToString() + "'); SET FMTONLY OFF;SET NOCOUNT OFF;";
             cmdset.Transaction = transactionset;
 
             SqlDataReader reader = cmdset.ExecuteReader(CommandBehavior.KeyInfo);
             DataTable schemaTable = reader.GetSchemaTable();
+
             foreach (DataRow row in schemaTable.Rows)
             {
                 //foreach (DataColumn myProperty in schemaTable.Columns){SqlContext.Pipe.Send(myProperty.ColumnName + " = " + row[myProperty].ToString());}
@@ -208,8 +265,8 @@ public partial class StoredProcedures
             reader.Close();
             transactionset.Commit();
 
-            SqlContext.Pipe.Send("== Recriando Tabela " + para.ToString());
-            string script = GetCreateTableScript(schemaTable, para.ToString(), conn);  //Gera Script de Criação da tabela 
+            SqlContext.Pipe.Send("Recriando Tabela " + schemapara.ToString() + para.ToString());
+            string script = GetCreateTableScript(schemaTable, schemapara.ToString(), para.ToString(), conn);  //Gera Script de Criação da tabela 
             //SqlContext.Pipe.Send(script); // Descomentar linha para exibir o script de criação da tabela
             SqlCommand cmd = conn.CreateCommand();
             SqlTransaction transactioncria; // transaction de criação da tabela. 
@@ -221,10 +278,12 @@ public partial class StoredProcedures
             readerRecreate.Close();
             transactioncria.Commit(); // encerra transaciton de criação da tabela
 
+
+            SqlContext.Pipe.Send("Verificando necessidade de ativar o Identity_Insert ");
             SqlTransaction transactioncheckidendity; // transaction do Identity_Insert. 
             transactioncheckidendity = conn.BeginTransaction("hasIdentity");
             SqlCommand cmdHasIdentity = conn.CreateCommand();
-            cmdHasIdentity.CommandText = "SELECT OBJECTPROPERTY(OBJECT_ID('" + para.ToString() + "'), 'TableHasIdentity') ";
+            cmdHasIdentity.CommandText = "SELECT OBJECTPROPERTY(OBJECT_ID('" + schemapara.ToString() + para.ToString() + "'), 'TableHasIdentity') ";
             cmdHasIdentity.Transaction = transactioncheckidendity;
 
             using (SqlDataReader readerHasIdentity = cmdHasIdentity.ExecuteReader())
@@ -237,34 +296,51 @@ public partial class StoredProcedures
             }
             transactioncheckidendity.Commit();
 
-
             if (hasIdenity)
             {
+
+                //Ativa a opção Identity_Insert
                 SqlTransaction transactionsetidentityon; // transaction do Identity_Insert. 
                 transactionsetidentityon = conn.BeginTransaction("IdentityInsert");
                 SqlCommand cmdSetIdentity = conn.CreateCommand();
-                cmdSetIdentity.CommandText = "SET IDENTITY_INSERT " + para.ToString() + " ON";
+                cmdSetIdentity.CommandText = "SET IDENTITY_INSERT " + schemapara.ToString() + para.ToString() + " ON";
                 cmdSetIdentity.Transaction = transactionsetidentityon;
-
 
                 SqlDataReader readerSetIdentity = cmdSetIdentity.ExecuteReader();
                 readerSetIdentity.Close();
                 transactionsetidentityon.Commit();
+
+                primaryfororder = GetPrimaryForOrder(schemaTable, schemapara.ToString(), para.ToString(), conn);
+                primaryforordinal = GetPrimaryForOrderOrdinal(schemaTable, schemapara.ToString(), para.ToString(), conn);
+
             }
             SqlContext.Pipe.Send("======== Adicionando campos a tabela ============");
 
+            int id = 0;
             for (int page = 0; page < totalpages; page++)
             {
                 try
                 {
                     SqlTransaction transaction;
-
                     // Start a local transaction.
                     transaction = conn.BeginTransaction("SampleTransaction");
 
                     int startat = (page * perpage) + 1;
+
+                    string querypaginada;
+
+                    /*if (hasIdenity && (!String.IsNullOrEmpty(primaryfororder)))
+                    {*/
+                        querypaginada = "select * FROM OPENQUERY([SYBASE],'Select TOP " + perpage + " *  FROM " + schemade.ToString() + de.ToString() + " Where "+ primaryfororder + " > " + id + " Order by " + (primaryforordinal  + 1) + "')";
+                    SqlContext.Pipe.Send(querypaginada);
+                    /* }
+                   else
+                    {
+                      */
+                        querypaginada = "select * FROM OPENQUERY([SYBASE],'Select TOP " + perpage + "  START AT " + startat + " *  FROM " + schemade.ToString() + de.ToString() + " Order by 1')";
+                    //}
                     List<ListaColunas> values = new List<ListaColunas>();
-                    using (SqlCommand selectFields = new SqlCommand("select * FROM OPENQUERY([SYBASE],'Select TOP " + perpage + "  START AT " + startat + " *  FROM " + de.ToString() + " Order by 1')"
+                    using (SqlCommand selectFields = new SqlCommand(querypaginada
                      ,
                      conn))
                     {
@@ -285,14 +361,18 @@ public partial class StoredProcedures
                                 }
                                 novosCampos.values = campos;
                                 values.Add(novosCampos);
-                            }
+                                if (hasIdenity)
+                                {
+                                    id =  Convert.ToInt32(fieldsReader[primaryforordinal].ToString());
+                                }
+                            }                            
                             fieldsReader.Close();
                         }
                         transaction.Commit();
                         SqlContext.Pipe.Send("======= Hora Término: " + DateTime.Now);
                     }
                     //loop de 'Insert' de valores
-                    InsertValues(para, conn, values, columns, tipos);
+                    InsertValues(para, schemapara, conn, values, columns, tipos);
                 }
                 catch (Exception e)
                 {
@@ -304,9 +384,8 @@ public partial class StoredProcedures
                 SqlTransaction transactionsetidentityoff; // transaction do Identity_Insert. 
                 transactionsetidentityoff = conn.BeginTransaction("IdentityInsert");
                 SqlCommand cmdSetIdentityoff = conn.CreateCommand();
-                cmdSetIdentityoff.CommandText = "SET IDENTITY_INSERT " + para.ToString() + " OFF";
+                cmdSetIdentityoff.CommandText = "SET IDENTITY_INSERT " + schemapara.ToString() + para.ToString() + " OFF";
                 cmdSetIdentityoff.Transaction = transactionsetidentityoff;
-
 
                 SqlDataReader readerSetIdentityoff = cmdSetIdentityoff.ExecuteReader();
                 readerSetIdentityoff.Close();
@@ -316,11 +395,11 @@ public partial class StoredProcedures
         }
     }
 
-    public static void InsertValues(SqlString para, SqlConnection conn, List<ListaColunas> values, List<string> columns, List<SqlDbType> tipos)
+    public static void InsertValues(SqlString para, SqlString schemapara, SqlConnection conn, List<ListaColunas> values, List<string> columns, List<SqlDbType> tipos)
     {
         foreach (ListaColunas value in values)
         {
-            string commandoInsert = "INSERT " + para.ToString() + "(";
+            string commandoInsert = "INSERT " + schemapara.ToString() + para.ToString() + "(";
             foreach (var col in columns)
                 commandoInsert += col + ",";
 
