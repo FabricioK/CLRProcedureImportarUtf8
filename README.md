@@ -1,12 +1,19 @@
 # CLRProcedureImportarUtf8
-drop procedure InsertWithUtf8
+## Create the procedure on sql server management studio
+
+IF Exists ( Select * from sys.procedures where name = 'Your_Procedure_Name')
+drop procedure Your_Procedure_Name
 GO
 
-drop assembly externa
+IF EXISTS (select * from sys.assemblies where name = 'Your_Assembly_Name')
+drop assembly Your_Assembly_Name
 GO
 
-CREATE ASSEMBLY externa from 'C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\bin\Debug\ProcedureInsertWithUTFConvert.dll' WITH PERMISSION_SET = SAFE
+ALTER DATABASE [Your_Database] SET TRUSTWORTHY ON; 
 GO
-CREATE PROCEDURE InsertWithUtf8 @table nvarchar(150) ,@name nvarchar(150) 
+CREATE ASSEMBLY Your_Assembly_Name from 'C:\local\to\your\Procedure.dll' WITH PERMISSION_SET = EXTERNAL_ACCESS
+GO
+
+CREATE PROCEDURE Your_Procedure_Name @de nvarchar(150) ,@para nvarchar(150),@schemade nvarchar(150) ,@schemapara nvarchar(150) , @count int
 AS
-EXTERNAL NAME externa.StoredProcedures.ProcedureInsertWithUTFConvert
+EXTERNAL NAME Your_Assembly_Name.StoredProcedures.ProcedureInsertWithUTFConvert
