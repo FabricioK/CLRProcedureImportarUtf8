@@ -84,6 +84,14 @@ public partial class StoredProcedures
             case "datetime":
                 converted = "datetime2";
                 break;
+            case "double":
+                converted = "real";
+                break;
+            case "float":
+                converted = "real";
+                converted = (hasSize) ? "(" + ColumnSize + ")" : (hasPrecisionAndScale) ? "(" + NumericPrecision + ")" : "";
+                converted = dataType + " " + converted;
+                break;
             default:
                 converted = (hasSize) ? "(" + ColumnSize + ")" : (hasPrecisionAndScale) ? "(" + NumericPrecision + "," + NumericScale + ")" : "";
                 converted = dataType + " " + converted;
@@ -172,26 +180,33 @@ public partial class StoredProcedures
             }
             transactionset.Commit();
         }
-
+        switch (auxAutoIncrement)
+        {
+            case "current timestamp":
+                auxAutoIncrement = "GETDATE()";
+                break;
+            default:
+                break;
+        }
         sql.AppendFormat("\t[{0}] {1} {2} {3} {4},\r\n",
                ColumnName,
                changeValue(DataTypeName, hasSize, ColumnSize, hasPrecisionAndScale, NumericPrecision, NumericScale),
                (IsIdentity) ? "IDENTITY" : "",
                (IsAutoIncrement) ? "IDENTITY" : String.IsNullOrEmpty(auxAutoIncrement) ? "" : (auxAutoIncrement.ToUpper() == "AUTOINCREMENT") ? "IDENTITY" : " DEFAULT  " + auxAutoIncrement,
-               (AllowDBNull) ? "  NULL" : "  NOT NULL"
+               (AllowDBNull) ? (String.IsNullOrEmpty(auxAutoIncrement)? " NULL" : (auxAutoIncrement.ToUpper() == "AUTOINCREMENT")?  " NOT NULL": " NULL ") : "  NOT NULL"
                );
         return sql.ToString();
     }
 
     private static string GetPrimaryForOrder(DataTable dt, string schema, string tableName, SqlConnection conn)
     {
-        string primary = string.Empty;     
+        string primary = string.Empty;
         for (int i = 0; i < dt.Rows.Count; i++)
         {
             DataRow dr = dt.Rows[i];
-            if(String.IsNullOrEmpty(primary))
-                primary = GetColumnPrimarySql(dr, tableName, conn);        
-        }        
+            if (String.IsNullOrEmpty(primary))
+                primary = GetColumnPrimarySql(dr, tableName, conn);
+        }
         return primary;
     }
 
@@ -221,8 +236,8 @@ public partial class StoredProcedures
                 while (reader.Read())
                 {
                     inPrimaryKey = reader["in_primary_key"].ToString() == "Y";
-                    if (inPrimaryKey) 
-                    colno = Convert.ToInt32(reader["colno"].ToString()) - 1;
+                    if (inPrimaryKey)
+                        colno = Convert.ToInt32(reader["colno"].ToString()) - 1;
                 }
                 reader.Close();
             }
@@ -329,16 +344,14 @@ public partial class StoredProcedures
 
                     string querypaginada;
 
-                    /*if (hasIdenity && (!String.IsNullOrEmpty(primaryfororder)))
-                    {*/
-                        querypaginada = "select * FROM OPENQUERY([SYBASE],'Select TOP " + perpage + " *  FROM " + schemade.ToString() + de.ToString() + " Where "+ primaryfororder + " > " + id + " Order by " + (primaryforordinal  + 1) + "')";
-                    SqlContext.Pipe.Send(querypaginada);
-                    /* }
-                   else
+                    if (hasIdenity && (!String.IsNullOrEmpty(primaryfororder)))
                     {
-                      */
+                        querypaginada = "select * FROM OPENQUERY([SYBASE],'Select TOP " + perpage + " *  FROM " + schemade.ToString() + de.ToString() + " Where " + primaryfororder + " > " + id + " Order by " + (primaryforordinal + 1) + "')";
+                    }
+                    else
+                    {
                         querypaginada = "select * FROM OPENQUERY([SYBASE],'Select TOP " + perpage + "  START AT " + startat + " *  FROM " + schemade.ToString() + de.ToString() + " Order by 1')";
-                    //}
+                    }
                     List<ListaColunas> values = new List<ListaColunas>();
                     using (SqlCommand selectFields = new SqlCommand(querypaginada
                      ,
@@ -363,9 +376,9 @@ public partial class StoredProcedures
                                 values.Add(novosCampos);
                                 if (hasIdenity)
                                 {
-                                    id =  Convert.ToInt32(fieldsReader[primaryforordinal].ToString());
+                                    id = Convert.ToInt32(fieldsReader[primaryforordinal].ToString());
                                 }
-                            }                            
+                            }
                             fieldsReader.Close();
                         }
                         transaction.Commit();

@@ -1,5 +1,5 @@
 C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\bin\Debug\ProcedureInsertWithUTFConvert.dll
 C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\bin\Debug\ProcedureInsertWithUTFConvert.pdb
+C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\obj\Debug\ProcedureInsertWithUTFConvert.csprojResolveAssemblyReference.cache
 C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\obj\Debug\ProcedureInsertWithUTFConvert.dll
 C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\obj\Debug\ProcedureInsertWithUTFConvert.pdb
-C:\Users\fabricio.antunes\Documents\Visual Studio 2015\Projects\ProcedureInsertWithUTFConvert\ProcedureInsertWithUTFConvert\obj\Debug\ProcedureInsertWithUTFConvert.csprojResolveAssemblyReference.cache
